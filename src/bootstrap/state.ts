@@ -298,6 +298,7 @@ function getInitialState(): State {
     initialMainLoopModel: null,
     modelStrings: null,
     isInteractive: false,
+    llmRequestApprovalController: null,
     kairosActive: false,
     strictToolResultPairing: false,
     sdkAgentProgressSummariesEnabled: false,
@@ -1064,6 +1065,18 @@ export function getIsInteractive(): boolean {
 
 export function setIsInteractive(value: boolean): void {
   STATE.isInteractive = value
+}
+
+export function getLlmRequestApprovalController():
+  | ((request: unknown) => Promise<'approve' | 'reject'>)
+  | null {
+  return STATE.llmRequestApprovalController
+}
+
+export function setLlmRequestApprovalController(
+  controller: ((request: unknown) => Promise<'approve' | 'reject'>) | null,
+): void {
+  STATE.llmRequestApprovalController = controller
 }
 
 export function getClientType(): string {

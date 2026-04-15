@@ -29,7 +29,7 @@ import { startPreventSleep, stopPreventSleep } from '../services/preventSleep.js
 import { useTerminalNotification } from '../ink/useTerminalNotification.js';
 import { hasCursorUpViewportYankBug } from '../ink/terminal.js';
 import { createFileStateCacheWithSizeLimit, mergeFileStateCaches, READ_FILE_STATE_CACHE_SIZE } from '../utils/fileStateCache.js';
-import { updateLastInteractionTime, getLastInteractionTime, getOriginalCwd, getProjectRoot, getSessionId, switchSession, setCostStateForRestore, getTurnHookDurationMs, getTurnHookCount, resetTurnHookDuration, getTurnToolDurationMs, getTurnToolCount, resetTurnToolDuration, getTurnClassifierDurationMs, getTurnClassifierCount, resetTurnClassifierDuration } from '../bootstrap/state.js';
+import { updateLastInteractionTime, getLastInteractionTime, getOriginalCwd, getProjectRoot, getSessionId, switchSession, setCostStateForRestore, getTurnHookDurationMs, getTurnHookCount, resetTurnHookDuration, getTurnToolDurationMs, getTurnToolCount, resetTurnToolDuration, getTurnClassifierDurationMs, getTurnClassifierCount, resetTurnClassifierDuration, setLlmRequestApprovalController } from '../bootstrap/state.js';
 import { asSessionId, asAgentId } from '../types/ids.js';
 import { logForDebugging } from '../utils/debug.js';
 import { QueryGuard } from '../utils/QueryGuard.js';
@@ -54,7 +54,12 @@ import { useIdeLogging } from '../hooks/useIdeLogging.js';
 import { PermissionRequest, type ToolUseConfirm } from '../components/permissions/PermissionRequest.js';
 import { ElicitationDialog } from '../components/mcp/ElicitationDialog.js';
 import { PromptDialog } from '../components/hooks/PromptDialog.js';
+import { LlmRequestApprovalDialog } from '../components/hooks/LlmRequestApprovalDialog.js';
 import type { PromptRequest, PromptResponse } from '../types/hooks.js';
+import type {
+  LlmRequestApprovalDecision,
+  LlmRequestApprovalDialogRequest,
+} from '../utils/llmRequestApproval.js';
 import PromptInput from '../components/PromptInput/PromptInput.js';
 import { PromptInputQueuedCommands } from '../components/PromptInput/PromptInputQueuedCommands.js';
 import { useRemoteSession } from '../hooks/useRemoteSession.js';
@@ -1117,6 +1122,10 @@ export function REPL({
     resolve: (response: PromptResponse) => void;
     reject: (error: Error) => void;
   }>>([]);
+  const [llmRequestApprovalQueue, setLlmRequestApprovalQueue] = useState<Array<{
+    request: LlmRequestApprovalDialogRequest;
+    resolve: (decision: LlmRequestApprovalDecision) => void;
+  }>>([]);
 
   // Track bridge cleanup functions for sandbox permission requests so the
   // local dialog handler can cancel the remote prompt when the local user
@@ -1136,7 +1145,7 @@ export function REPL({
   const haikuTitleAttemptedRef = useRef((initialMessages?.length ?? 0) > 0);
   const agentTitle = mainThreadAgentDefinition?.agentType;
   const terminalTitle = sessionTitle ?? agentTitle ?? haikuTitle ?? 'Free Code';
-  const isWaitingForApproval = toolUseConfirmQueue.length > 0 || promptQueue.length > 0 || pendingWorkerRequest || pendingSandboxRequest;
+  const isWaitingForApproval = toolUseConfirmQueue.length > 0 || llmRequestApprovalQueue.length > 0 || promptQueue.length > 0 || pendingWorkerRequest || pendingSandboxRequest;
   // Local-jsx commands (like /plugin, /config) show user-facing dialogs that
   // wait for input. Require jsx != null — if the flag is stuck true but jsx
   // is null, treat as not-showing so TextInput focus and queue processor
@@ -1156,7 +1165,7 @@ export function REPL({
     }
   }, [isLoading, isWaitingForApproval, isShowingLocalJSXCommand]);
   const sessionStatus: TabStatusKind = isWaitingForApproval || isShowingLocalJSXCommand ? 'waiting' : isLoading ? 'busy' : 'idle';
-  const waitingFor = sessionStatus !== 'waiting' ? undefined : toolUseConfirmQueue.length > 0 ? `approve ${toolUseConfirmQueue[0]!.tool.name}` : pendingWorkerRequest ? 'worker request' : pendingSandboxRequest ? 'sandbox request' : isShowingLocalJSXCommand ? 'dialog open' : 'input needed';
+  const waitingFor = sessionStatus !== 'waiting' ? undefined : toolUseConfirmQueue.length > 0 ? `approve ${toolUseConfirmQueue[0]!.tool.name}` : llmRequestApprovalQueue.length > 0 ? 'review llm request' : pendingWorkerRequest ? 'worker request' : pendingSandboxRequest ? 'sandbox request' : isShowingLocalJSXCommand ? 'dialog open' : 'input needed';
 
   // Push status to the PID file for `claude ps`. Fire-and-forget; ps falls
   // back to transcript-tail derivation when this is missing/stale.
@@ -2017,7 +2026,7 @@ export function REPL({
   // Permission and interactive dialogs can show even when toolJSX is set,
   // as long as shouldContinueAnimation is true. This prevents deadlocks when
   // agents set background hints while waiting for user interaction.
-  function getFocusedInputDialog(): 'message-selector' | 'sandbox-permission' | 'tool-permission' | 'prompt' | 'worker-sandbox-permission' | 'elicitation' | 'cost' | 'idle-return' | 'init-onboarding' | 'ide-onboarding' | 'model-switch' | 'undercover-callout' | 'effort-callout' | 'remote-callout' | 'lsp-recommendation' | 'plugin-hint' | 'desktop-upsell' | 'ultraplan-choice' | 'ultraplan-launch' | undefined {
+  function getFocusedInputDialog(): 'message-selector' | 'sandbox-permission' | 'tool-permission' | 'llm-request-approval' | 'prompt' | 'worker-sandbox-permission' | 'elicitation' | 'cost' | 'idle-return' | 'init-onboarding' | 'ide-onboarding' | 'model-switch' | 'undercover-callout' | 'effort-callout' | 'remote-callout' | 'lsp-recommendation' | 'plugin-hint' | 'desktop-upsell' | 'ultraplan-choice' | 'ultraplan-launch' | undefined {
     // Exit states always take precedence
     if (isExiting || exitFlow) return undefined;
 
@@ -2031,6 +2040,7 @@ export function REPL({
     // Permission/interactive dialogs (show unless blocked by toolJSX)
     const allowDialogsWithAnimation = !toolJSX || toolJSX.shouldContinueAnimation;
     if (allowDialogsWithAnimation && toolUseConfirmQueue[0]) return 'tool-permission';
+    if (allowDialogsWithAnimation && llmRequestApprovalQueue[0]) return 'llm-request-approval';
     if (allowDialogsWithAnimation && promptQueue[0]) return 'prompt';
     // Worker sandbox permission prompts (network access) from swarm workers
     if (allowDialogsWithAnimation && workerSandboxPermissions.queue[0]) return 'worker-sandbox-permission';
@@ -2068,7 +2078,7 @@ export function REPL({
   const focusedInputDialog = getFocusedInputDialog();
 
   // True when permission prompts exist but are hidden because the user is typing
-  const hasSuppressedDialogs = isPromptInputActive && (sandboxPermissionRequestQueue[0] || toolUseConfirmQueue[0] || promptQueue[0] || workerSandboxPermissions.queue[0] || elicitation.queue[0] || showingCostDialog);
+  const hasSuppressedDialogs = isPromptInputActive && (sandboxPermissionRequestQueue[0] || toolUseConfirmQueue[0] || llmRequestApprovalQueue[0] || promptQueue[0] || workerSandboxPermissions.queue[0] || elicitation.queue[0] || showingCostDialog);
 
   // Keep ref in sync so timer callbacks can read the current value
   focusedInputDialogRef.current = focusedInputDialog;
@@ -2078,7 +2088,7 @@ export function REPL({
   // relying on the 100ms polling interval to detect state changes
   useEffect(() => {
     if (!isLoading) return;
-    const isPaused = focusedInputDialog === 'tool-permission';
+    const isPaused = focusedInputDialog === 'tool-permission' || focusedInputDialog === 'llm-request-approval';
     const now = Date.now();
     if (isPaused && pauseStartTimeRef.current === null) {
       // Just entered pause state - record the exact moment
@@ -2101,8 +2111,8 @@ export function REPL({
   // no 1-frame flash of the wrong scroll position.
   const prevDialogRef = useRef(focusedInputDialog);
   useLayoutEffect(() => {
-    const was = prevDialogRef.current === 'tool-permission';
-    const now = focusedInputDialog === 'tool-permission';
+    const was = prevDialogRef.current === 'tool-permission' || prevDialogRef.current === 'llm-request-approval';
+    const now = focusedInputDialog === 'tool-permission' || focusedInputDialog === 'llm-request-approval';
     if (was !== now) repinScroll();
     prevDialogRef.current = focusedInputDialog;
   }, [focusedInputDialog, repinScroll]);
@@ -2141,6 +2151,8 @@ export function REPL({
       // Tool use confirm handles the abort signal itself
       toolUseConfirmQueue[0]?.onAbort();
       setToolUseConfirmQueue([]);
+    } else if (focusedInputDialog === 'llm-request-approval') {
+      resolveLlmRequestApproval('reject');
     } else if (focusedInputDialog === 'prompt') {
       // Reject all pending prompts and clear the queue
       for (const item of promptQueue) {
@@ -2392,6 +2404,24 @@ export function REPL({
       reject
     }]);
   }), []);
+  const resolveLlmRequestApproval = useCallback((decision: LlmRequestApprovalDecision) => {
+    setLlmRequestApprovalQueue(queue => {
+      const [current, ...tail] = queue;
+      current?.resolve(decision);
+      return tail;
+    });
+  }, []);
+  useEffect(() => {
+    setLlmRequestApprovalController(request => new Promise<LlmRequestApprovalDecision>(resolve => {
+      setLlmRequestApprovalQueue(prev => [...prev, {
+        request: request as LlmRequestApprovalDialogRequest,
+        resolve
+      }]);
+    }));
+    return () => {
+      setLlmRequestApprovalController(null);
+    };
+  }, [setLlmRequestApprovalQueue]);
   const getToolUseContext = useCallback((messages: MessageType[], newMessages: MessageType[], abortController: AbortController, mainLoopModel: string): ProcessUserInputContext => {
     // Read mutable values fresh from the store rather than closure-capturing
     // useAppState() snapshots. Same values today (closure is refreshed by the
@@ -4520,6 +4550,8 @@ export function REPL({
   // doesn't use the placeholder anyway.
   const placeholderText = userInputOnProcessing && !viewedAgentTask && displayedMessages.length <= userInputBaselineRef.current ? userInputOnProcessing : undefined;
   const toolPermissionOverlay = focusedInputDialog === 'tool-permission' ? <PermissionRequest key={toolUseConfirmQueue[0]?.toolUseID} onDone={() => setToolUseConfirmQueue(([_, ...tail]) => tail)} onReject={handleQueuedCommandOnCancel} toolUseConfirm={toolUseConfirmQueue[0]!} toolUseContext={getToolUseContext(messages, messages, abortController ?? createAbortController(), mainLoopModel)} verbose={verbose} workerBadge={toolUseConfirmQueue[0]?.workerBadge} setStickyFooter={isFullscreenEnvEnabled() ? setPermissionStickyFooter : undefined} /> : null;
+  const llmRequestApprovalOverlay = focusedInputDialog === 'llm-request-approval' ? <LlmRequestApprovalDialog request={llmRequestApprovalQueue[0]!.request} onDecision={resolveLlmRequestApproval} /> : null;
+  const approvalOverlay = toolPermissionOverlay ?? llmRequestApprovalOverlay;
 
   // Narrow terminals: companion collapses to a one-liner that REPL stacks
   // on its own row (above input in fullscreen, below in scrollback) instead
@@ -4561,11 +4593,11 @@ export function REPL({
           the modal's inner ScrollBox is not keyboard-driven. onScroll
           stays suppressed while a modal is showing so scroll doesn't
           stamp divider/pill state. */}
-      <ScrollKeybindingHandler scrollRef={scrollRef} isActive={isFullscreenEnvEnabled() && (centeredModal != null || !focusedInputDialog || focusedInputDialog === 'tool-permission')} onScroll={centeredModal || toolPermissionOverlay || viewedAgentTask ? undefined : composedOnScroll} />
+      <ScrollKeybindingHandler scrollRef={scrollRef} isActive={isFullscreenEnvEnabled() && (centeredModal != null || !focusedInputDialog || focusedInputDialog === 'tool-permission' || focusedInputDialog === 'llm-request-approval')} onScroll={centeredModal || approvalOverlay || viewedAgentTask ? undefined : composedOnScroll} />
       {feature('MESSAGE_ACTIONS') && isFullscreenEnvEnabled() && !disableMessageActions ? <MessageActionsKeybindings handlers={messageActionHandlers} isActive={cursor !== null} /> : null}
       <CancelRequestHandler {...cancelRequestProps} />
       <MCPConnectionManager key={remountKey} dynamicMcpConfig={dynamicMcpConfig} isStrictMcpConfig={strictMcpConfig}>
-        <FullscreenLayout scrollRef={scrollRef} overlay={toolPermissionOverlay} bottomFloat={feature('BUDDY') && companionVisible && !companionNarrow ? <CompanionFloatingBubble /> : undefined} modal={centeredModal} modalScrollRef={modalScrollRef} dividerYRef={dividerYRef} hidePill={!!viewedAgentTask} hideSticky={!!viewedTeammateTask} newMessageCount={unseenDivider?.count ?? 0} onPillClick={() => {
+        <FullscreenLayout scrollRef={scrollRef} overlay={approvalOverlay} bottomFloat={feature('BUDDY') && companionVisible && !companionNarrow ? <CompanionFloatingBubble /> : undefined} modal={centeredModal} modalScrollRef={modalScrollRef} dividerYRef={dividerYRef} hidePill={!!viewedAgentTask} hideSticky={!!viewedTeammateTask} newMessageCount={unseenDivider?.count ?? 0} onPillClick={() => {
         setCursor(null);
         jumpToNew(scrollRef.current);
       }} scrollable={<>

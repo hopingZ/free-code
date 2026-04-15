@@ -696,6 +696,17 @@ async function* queryLoop(
               skipCacheWrite,
               agentId: toolUseContext.agentId,
               addNotification: toolUseContext.addNotification,
+              approvalMetadata: {
+                rawMessages: messagesForQuery,
+                rawSystemPrompt: systemPrompt,
+                userContext,
+                systemContext,
+                onReject: () => {
+                  if (!toolUseContext.abortController.signal.aborted) {
+                    toolUseContext.abortController.abort('user-cancel')
+                  }
+                },
+              },
               ...(params.taskBudget && {
                 taskBudget: {
                   total: params.taskBudget.total,

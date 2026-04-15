@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk'
+import { APIUserAbortError } from '@anthropic-ai/sdk/error'
 import type { BetaToolUnion } from '@anthropic-ai/sdk/resources/beta/messages.js'
 import {
   getLastApiCompletionTimestamp,
@@ -17,6 +18,7 @@ import { getAnthropicClient } from '../services/api/client.js'
 import { getModelBetas, modelSupportsStructuredOutputs } from './betas.js'
 import { computeFingerprint } from './fingerprint.js'
 import { normalizeModelStringForAPI } from './model/model.js'
+import { approveLlmRequest } from './llmRequestApproval.js'
 
 type MessageParam = Anthropic.MessageParam
 type TextBlockParam = Anthropic.TextBlockParam
@@ -177,6 +179,19 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
   }
 
   const normalizedModel = normalizeModelStringForAPI(model)
+  const approved = await approveLlmRequest({
+    querySource: opts.querySource,
+    model: normalizedModel,
+    kind: 'messages',
+    messages,
+    systemPrompt: systemBlocks,
+    tools: tools ?? [],
+    rawSystemPrompt: system,
+  })
+  if (!approved) {
+    throw new APIUserAbortError()
+  }
+
   const start = Date.now()
   // biome-ignore lint/plugin: this IS the wrapper that handles OAuth attribution
   const response = await client.beta.messages.create(

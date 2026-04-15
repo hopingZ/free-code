@@ -93,6 +93,7 @@ import {
   type SystemPrompt,
 } from '../../utils/systemPromptType.js'
 import { tokenCountFromLastAPIResponse } from '../../utils/tokens.js'
+import { approveLlmRequest } from '../../utils/llmRequestApproval.js'
 import { getDynamicConfig_BLOCKS_ON_INIT } from '../analytics/growthbook.js'
 import {
   currentLimits,
@@ -551,6 +552,17 @@ export async function verifyApiKey(
           }),
         async anthropic => {
           const messages: MessageParam[] = [{ role: 'user', content: 'test' }]
+          const approved = await approveLlmRequest({
+            querySource: 'verify_api_key',
+            model,
+            kind: 'messages',
+            messages,
+            systemPrompt: [],
+            tools: [],
+          })
+          if (!approved) {
+            throw new APIUserAbortError()
+          }
           // biome-ignore lint/plugin: API key verification is intentionally a minimal direct call
           await anthropic.beta.messages.create({
             model,
@@ -570,6 +582,9 @@ export async function verifyApiKey(
     let error = errorFromRetry
     if (errorFromRetry instanceof CannotRetryError) {
       error = errorFromRetry.originalError
+    }
+    if (error instanceof APIUserAbortError) {
+      throw error
     }
     logError(error)
     // Check for authentication error
@@ -739,6 +754,9 @@ export async function queryModelWithoutStreaming({
     }
   }
   if (!assistantMessage) {
+    if (options.approvalMetadata?.didReject) {
+      throw new APIUserAbortError()
+    }
     // If the signal was aborted, throw APIUserAbortError instead of a generic error
     // This allows callers to handle abort scenarios gracefully
     if (signal.aborted) {
@@ -1737,6 +1755,22 @@ async function* queryModel(
       model: options.model,
       thinkingConfig,
     })
+
+    const approvalMetadata = (options.approvalMetadata ??= {})
+    const approved = await approveLlmRequest({
+      ...approvalMetadata,
+      querySource: options.querySource,
+      model: queryParams.model,
+      kind: 'messages',
+      messages: queryParams.messages,
+      systemPrompt: queryParams.system,
+      tools: queryParams.tools,
+    })
+    if (!approved) {
+      approvalMetadata.didReject = true
+      return
+    }
+
     const logMessagesLength = queryParams.messages.length
     const logBetas = useBetas ? (queryParams.betas ?? []) : []
     const logThinkingType = queryParams.thinking?.type ?? 'disabled'

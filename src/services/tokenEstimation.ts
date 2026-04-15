@@ -26,6 +26,8 @@ import { isToolReferenceBlock } from '../utils/toolSearch.js'
 import { getAPIMetadata, getExtraBodyParams } from './api/claude.js'
 import { getAnthropicClient } from './api/client.js'
 import { withTokenCountVCR } from './vcr.js'
+import { approveLlmRequest } from '../utils/llmRequestApproval.js'
+import { APIUserAbortError } from '@anthropic-ai/sdk/error'
 
 // Minimal values for token counting with thinking enabled
 // API constraint: max_tokens must be greater than thinking.budget_tokens
@@ -298,6 +300,16 @@ export async function countTokensViaHaikuFallback(
       ? betas.filter(b => VERTEX_COUNT_TOKENS_ALLOWED_BETAS.has(b))
       : betas
 
+  const approved = await approveLlmRequest({
+    querySource: 'count_tokens',
+    model: normalizeModelStringForAPI(model),
+    kind: 'messages',
+    messages: messagesToSend,
+    tools,
+  })
+  if (!approved) {
+    throw new APIUserAbortError()
+  }
   // biome-ignore lint/plugin: token counting needs specialized parameters (thinking, betas) that sideQuery doesn't support
   const response = await anthropic.beta.messages.create({
     model: normalizeModelStringForAPI(model),

@@ -16,6 +16,7 @@ import {
   processRateLimitHeaders,
   shouldProcessRateLimits,
 } from './rateLimitMocking.js'
+import { approveLlmRequest } from '../utils/llmRequestApproval.js'
 
 // Re-export message functions from centralized location
 export {
@@ -205,6 +206,17 @@ async function makeTestQuery() {
   })
   const messages: MessageParam[] = [{ role: 'user', content: 'quota' }]
   const betas = getModelBetas(model)
+  const approved = await approveLlmRequest({
+    querySource: 'quota_check',
+    model,
+    kind: 'messages',
+    messages,
+    systemPrompt: [],
+    tools: [],
+  })
+  if (!approved) {
+    throw new APIUserAbortError()
+  }
   // biome-ignore lint/plugin: quota check needs raw response access via asResponse()
   return anthropic.beta.messages
     .create({
