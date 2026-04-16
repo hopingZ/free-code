@@ -52,7 +52,7 @@ export async function withSkippedLlmRequestApproval<T>(
 export async function approveLlmRequest(
   input: LlmRequestApprovalInput,
 ): Promise<boolean> {
-  if (input.skipApproval || skipDepth > 0) {
+  if (input.skipApproval || skipDepth > 0 || input.querySource === 'generate_session_title') {
     return true
   }
 
@@ -146,7 +146,7 @@ function buildFullContent(input: LlmRequestApprovalInput): string {
     sections.push(buildSection('原始 messages', stringifyForDisplay(input.rawMessages)))
   }
 
-  sections.push(buildSection('最终 messages', stringifyForDisplay(input.messages)))
+  sections.push(buildSection('最终 messages', stringifyForDisplay(transformMessagesForDisplay(input.messages))))
 
   // if (input.tools && input.tools.length > 0) {
   //   sections.push(buildSection('tools', stringifyForDisplay(input.tools)))
@@ -263,6 +263,59 @@ function truncateForSummary(text: string, maxLength: number = 140): string {
 
 function normalizeWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
+}
+
+function transformMessagesForDisplay(messages: readonly unknown[]): unknown[] {
+  return messages.map(message => transformMessageContent(message))
+}
+
+function transformMessageContent(message: unknown): unknown {
+  if (!message || typeof message !== 'object') {
+    return message
+  }
+
+  const record = message as Record<string, unknown>
+
+  // 递归处理嵌套的 message 字段（如 assistant 消息中的 message 属性）
+  if (record.message !== undefined) {
+    return {
+      ...record,
+      message: transformMessageContent(record.message),
+    }
+  }
+
+  // 处理 content 数组
+  if (Array.isArray(record.content)) {
+    return {
+      ...record,
+      content: record.content.map(item => transformContentItem(item)),
+    }
+  }
+
+  return message
+}
+
+function transformContentItem(item: unknown): unknown {
+  if (!item || typeof item !== 'object') {
+    return item
+  }
+
+  const record = item as Record<string, unknown>
+
+  if (
+    record.type === 'tool_result' &&
+    typeof record.tool_use_id === 'string' &&
+    record.tool_use_id.startsWith('call_function_') &&
+    typeof record.content === 'string' &&
+    record.content.startsWith('1\t')
+  ) {
+    return {
+      ...record,
+      content: '文件读取结果，参考上面 Read 工具调用详情',
+    }
+  }
+
+  return item
 }
 
 function stringifyForDisplay(value: unknown): string {
