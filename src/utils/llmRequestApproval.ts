@@ -139,12 +139,12 @@ function buildFullContent(input: LlmRequestApprovalInput): string {
     sections.push(buildSection('系统 context', stringifyForDisplay(input.systemContext)))
   }*/
 
-  if (input.tools && input.tools.length > 0) {
+  if (input.tools && input.tools.length > 0 && input.messages.length <= 1) {
     const toolNames = input.tools.map(tool => (tool as Record<string, unknown>).name as string)
-    sections.push(buildSection('tools', toolNames))
+    sections.push(buildSection('tools', toolNames.join(' | ')))
   }
 
-  if (input.systemPrompt !== undefined) {
+  if (input.systemPrompt !== undefined && input.messages.length <= 1) {
     sections.push(buildSection('最终 system prompt', stringifyForDisplay(input.systemPrompt)))
   }
 
