@@ -74,7 +74,8 @@ export async function approveLlmRequest(
 function buildApprovalRequest(
   input: LlmRequestApprovalInput,
 ): LlmRequestApprovalDialogRequest {
-  const effectiveMessages = input.rawMessages ?? input.messages
+  // const effectiveMessages = input.rawMessages ?? input.messages
+  const effectiveMessages = input.messages
   const summaryLines = [
     `即将发送 1 次${getKindLabel(input.kind ?? 'messages')}。`,
     `来源: ${input.querySource}`,
@@ -113,7 +114,7 @@ function buildApprovalRequest(
 function buildFullContent(input: LlmRequestApprovalInput): string {
   const sections: string[] = []
 
-  sections.push(
+  /*sections.push(
     buildSection('请求信息', [
       `类型: ${getKindLabel(input.kind ?? 'messages')}`,
       `来源: ${input.querySource}`,
@@ -122,35 +123,36 @@ function buildFullContent(input: LlmRequestApprovalInput): string {
       `工具数: ${input.tools?.length ?? 0}`,
       `system prompt 段数: ${countPromptSegments(input.systemPrompt)}`,
     ]),
-  )
+  )*/
 
-  if (input.rawSystemPrompt !== undefined) {
+  /*if (input.rawSystemPrompt !== undefined) {
     sections.push(
       buildSection('原始 system prompt', stringifyForDisplay(input.rawSystemPrompt)),
     )
-  }
+  }*/
 
-  if (input.userContext && Object.keys(input.userContext).length > 0) {
+  /*if (input.userContext && Object.keys(input.userContext).length > 0) {
     sections.push(buildSection('用户 context', stringifyForDisplay(input.userContext)))
   }
 
   if (input.systemContext && Object.keys(input.systemContext).length > 0) {
     sections.push(buildSection('系统 context', stringifyForDisplay(input.systemContext)))
+  }*/
+
+  if (input.tools && input.tools.length > 0) {
+    const toolNames = input.tools.map(tool => (tool as Record<string, unknown>).name as string)
+    sections.push(buildSection('tools', toolNames))
   }
 
   if (input.systemPrompt !== undefined) {
     sections.push(buildSection('最终 system prompt', stringifyForDisplay(input.systemPrompt)))
   }
 
-  if (input.rawMessages !== undefined) {
+  /*if (input.rawMessages !== undefined) {
     sections.push(buildSection('原始 messages', stringifyForDisplay(input.rawMessages)))
-  }
+  }*/
 
   sections.push(buildSection('最终 messages', stringifyForDisplay(transformMessagesForDisplay(input.messages))))
-
-  // if (input.tools && input.tools.length > 0) {
-  //   sections.push(buildSection('tools', stringifyForDisplay(input.tools)))
-  // }
 
   return sections.join('\n\n')
 }

@@ -39,7 +39,7 @@ const fullExperimentalFeatures = [
   'QUICK_SEARCH',
   'SHOT_STATS',
   'TEAMMEM',
-  'TOKEN_BUDGET',
+  //'TOKEN_BUDGET',
   'TREE_SITTER_BASH',
   'TREE_SITTER_BASH_SHADOW',
   'ULTRAPLAN',

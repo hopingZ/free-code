@@ -552,17 +552,6 @@ export async function verifyApiKey(
           }),
         async anthropic => {
           const messages: MessageParam[] = [{ role: 'user', content: 'test' }]
-          const approved = await approveLlmRequest({
-            querySource: 'verify_api_key',
-            model,
-            kind: 'messages',
-            messages,
-            systemPrompt: [],
-            tools: [],
-          })
-          if (!approved) {
-            throw new APIUserAbortError()
-          }
           // biome-ignore lint/plugin: API key verification is intentionally a minimal direct call
           await anthropic.beta.messages.create({
             model,
@@ -582,9 +571,6 @@ export async function verifyApiKey(
     let error = errorFromRetry
     if (errorFromRetry instanceof CannotRetryError) {
       error = errorFromRetry.originalError
-    }
-    if (error instanceof APIUserAbortError) {
-      throw error
     }
     logError(error)
     // Check for authentication error
@@ -1375,11 +1361,12 @@ async function* queryModel(
   // filter(Boolean) works by converting each element to a boolean - empty strings become false and are filtered out.
   systemPrompt = asSystemPrompt(
     [
-      getAttributionHeader(fingerprint),
-      getCLISyspromptPrefix({
+      // 以下注释部分是 claude code 的身份认同
+      // getAttributionHeader(fingerprint),
+      /* getCLISyspromptPrefix({
         isNonInteractive: options.isNonInteractiveSession,
         hasAppendSystemPrompt: options.hasAppendSystemPrompt,
-      }),
+      }),*/
       ...systemPrompt,
       ...(advisorModel ? [ADVISOR_TOOL_INSTRUCTIONS] : []),
       ...(injectChromeHere ? [CHROME_TOOL_SEARCH_INSTRUCTIONS] : []),
