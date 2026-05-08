@@ -50,7 +50,13 @@ export function LlmRequestApprovalDialog({
     <PermissionDialog
       title="发送前确认"
       subtitle={`来源: ${request.querySource} · 模型: ${request.model}`}
-      titleRight={<Text dimColor>{request.kind === 'token_count' ? 'Token 估算' : 'LLM 请求'}</Text>}
+      titleRight={
+        request.kind === 'token_count' ? (
+          <Text dimColor italic>Token 估算</Text>
+        ) : (
+          <Text>LLM 请求</Text>
+        )
+      }
     >
       <Box flexDirection="column">
         <Text>{request.summary}</Text>

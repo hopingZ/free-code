@@ -177,7 +177,7 @@ function countPromptSegments(systemPrompt: unknown): number {
 }
 
 function summarizeMessages(messages: readonly unknown[]): string[] {
-  return messages.slice(-3).map((message, index, recentMessages) => {
+  return messages.slice(-5).map((message, index, recentMessages) => {
     const absoluteIndex = messages.length - recentMessages.length + index + 1
     const role = getMessageRole(message)
     const snippet = truncateForSummary(extractTextSnippet(message))
@@ -217,7 +217,8 @@ function extractTextSnippet(value: unknown, depth: number = 0): string {
   }
 
   if (Array.isArray(value)) {
-    return value.map(item => extractTextSnippet(item, depth + 1)).find(Boolean) ?? ''
+    const snippets = value.map(item => extractTextSnippet(item, depth + 1)).filter(Boolean)
+    return snippets.join(' | ')
   }
 
   if (typeof value !== 'object') {
@@ -231,9 +232,6 @@ function extractTextSnippet(value: unknown, depth: number = 0): string {
   if (typeof record.content === 'string') {
     return normalizeWhitespace(record.content)
   }
-  if (typeof record.thinking === 'string') {
-    return normalizeWhitespace(record.thinking)
-  }
   if (record.type === 'image') {
     return '[image]'
   }
@@ -241,11 +239,14 @@ function extractTextSnippet(value: unknown, depth: number = 0): string {
     return '[document]'
   }
   if (record.type === 'tool_use') {
-    return `[tool_use:${String(record.name ?? 'unknown')}]`
+    const name = String(record.name ?? 'unknown')
+    const args = record.arguments ?? record.input
+    const argsStr = args ? JSON.stringify(args, null, 2) : ''
+    return `[tool_use: ${name}]\n    ${argsStr ? `参数: ${argsStr}` : ''}`
   }
   if (record.type === 'tool_result') {
     const nested = extractTextSnippet(record.content, depth + 1)
-    return nested ? `[tool_result] ${nested}` : '[tool_result]'
+    return nested ? `[tool_result]\n    ${nested}` : '[tool_result]'
   }
   if (record.message !== undefined) {
     return extractTextSnippet(record.message, depth + 1)
@@ -256,11 +257,13 @@ function extractTextSnippet(value: unknown, depth: number = 0): string {
   return ''
 }
 
-function truncateForSummary(text: string, maxLength: number = 140): string {
+function truncateForSummary(text: string, maxLength: number = 280): string {
   if (text.length <= maxLength) {
     return text
   }
-  return `${text.slice(0, maxLength - 1)}…`
+  const headLength = Math.floor((maxLength - 6) / 2)
+  const tailLength = maxLength - 6 - headLength
+  return `${text.slice(0, headLength)}...[截断]...${text.slice(-tailLength)}`
 }
 
 function normalizeWhitespace(text: string): string {
