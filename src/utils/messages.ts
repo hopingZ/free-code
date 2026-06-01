@@ -1,3 +1,4 @@
+import { appendFileSync } from 'node:fs'
 import { feature } from 'bun:bundle'
 import type { BetaUsage as Usage } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import type {
@@ -2960,17 +2961,15 @@ export function handleMessageFromStream(
     if (message.type === 'tool_use_summary') {
       return
     }
-    // Capture complete thinking blocks for real-time display in transcript mode
+    // When the completed assistant message arrives, clear streaming thinking.
+    // The thinking block is already rendered as part of the message itself,
+    // so keeping streaming thinking would cause duplicate display.
     if (message.type === 'assistant') {
       const thinkingBlock = message.message.content.find(
         block => block.type === 'thinking',
       )
       if (thinkingBlock && thinkingBlock.type === 'thinking') {
-        onStreamingThinking?.(() => ({
-          thinking: thinkingBlock.thinking,
-          isStreaming: false,
-          streamingEndedAt: Date.now(),
-        }))
+        onStreamingThinking?.(() => null)
       }
     }
     // Clear streaming text NOW so the render can switch displayedMessages
@@ -3010,6 +3009,12 @@ export function handleMessageFromStream(
       }
       switch (message.event.content_block.type) {
         case 'thinking':
+          onSetStreamMode('thinking')
+          onStreamingThinking?.(() => ({
+            thinking: '',
+            isStreaming: true,
+          }))
+          return
         case 'redacted_thinking':
           onSetStreamMode('thinking')
           return
@@ -3049,6 +3054,10 @@ export function handleMessageFromStream(
       switch (message.event.delta.type) {
         case 'text_delta': {
           const deltaText = message.event.delta.text
+          appendFileSync(
+            '/tmp/sse-delta.log',
+            `[${new Date().toISOString()}] text_delta  len=${deltaText.length}  content=${JSON.stringify(deltaText)}\n`,
+          )
           onUpdateLength(deltaText)
           onStreamingText?.(text => (text ?? '') + deltaText)
           return
@@ -3072,9 +3081,19 @@ export function handleMessageFromStream(
           })
           return
         }
-        case 'thinking_delta':
-          onUpdateLength(message.event.delta.thinking)
+        case 'thinking_delta': {
+          const delta = message.event.delta.thinking
+          appendFileSync(
+            '/tmp/sse-delta.log',
+            `[${new Date().toISOString()}] thinking_delta  len=${delta.length}  content=${JSON.stringify(delta)}\n`,
+          )
+          onUpdateLength(delta)
+          onStreamingThinking?.(current => ({
+            thinking: (current?.thinking ?? '') + delta,
+            isStreaming: true,
+          }))
           return
+        }
         case 'signature_delta':
           // Signatures are cryptographic authentication strings, not model
           // output. Excluding them from onUpdateLength prevents them from
