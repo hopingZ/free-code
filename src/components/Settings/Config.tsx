@@ -609,6 +609,21 @@ export function Config({
         value: String(copyFullResponse) as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS
       });
     }
+  }, {
+    id: 'llmRequestApprovalEnabled',
+    label: 'Review LLM requests before sending',
+    value: globalConfig.llmRequestApprovalEnabled,
+    type: 'boolean' as const,
+    onChange(llmRequestApprovalEnabled: boolean) {
+      saveGlobalConfig(current => ({
+        ...current,
+        llmRequestApprovalEnabled
+      }));
+      setGlobalConfig({
+        ...getGlobalConfig(),
+        llmRequestApprovalEnabled
+      });
+    }
   },
   // Copy-on-select is only meaningful with in-app selection (fullscreen
   // alt-screen mode). In inline mode the terminal emulator owns selection.

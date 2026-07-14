@@ -3,6 +3,7 @@ import {
   getIsInteractive,
   getLlmRequestApprovalController,
 } from '../bootstrap/state.js'
+import { getGlobalConfig } from './config.js'
 
 export type LlmRequestKind = 'messages' | 'token_count'
 
@@ -53,6 +54,10 @@ export async function approveLlmRequest(
   input: LlmRequestApprovalInput,
 ): Promise<boolean> {
   if (input.skipApproval || skipDepth > 0 || input.querySource === 'generate_session_title') {
+    return true
+  }
+
+  if (!getGlobalConfig().llmRequestApprovalEnabled) {
     return true
   }
 

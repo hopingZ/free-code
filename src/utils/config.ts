@@ -473,6 +473,8 @@ export type GlobalConfig = {
   // Copy command behavior
   copyFullResponse: boolean // Whether /copy always copies the full response instead of showing the picker
 
+  llmRequestApprovalEnabled: boolean // Whether to show confirmation dialog before each LLM request
+
   // Fullscreen in-app text selection behavior
   copyOnSelect?: boolean // Auto-copy to clipboard on mouse-up (undefined → true; lets cmd+c "work" via no-op)
 
@@ -639,6 +641,7 @@ function createDefaultGlobalConfig(): GlobalConfig {
     cachedGrowthBookFeatures: {},
     respectGitignore: true,
     copyFullResponse: false,
+    llmRequestApprovalEnabled: false,
   }
 }
 
@@ -678,6 +681,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'lspRecommendationNeverPlugins',
   'lspRecommendationIgnoredCount',
   'copyFullResponse',
+  'llmRequestApprovalEnabled',
   'copyOnSelect',
   'permissionExplainerEnabled',
   'prStatusFooterEnabled',
